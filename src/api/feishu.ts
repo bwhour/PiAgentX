@@ -1,12 +1,12 @@
 /**
- * 飞书 Bot 适配器（WebSocket 长连接模式）
+ * Feishu bot adapter (WebSocket long-connection mode).
  *
- * 借鉴 pi-mom 架构，每个 chatId 独立 session，持久化对话历史，跨 chat 并行处理。
+ * pi-mom style: one session per chatId, persisted history, parallel chats.
  *
- * 启动: npm run feishu
- * 需要环境变量: FEISHU_APP_ID, FEISHU_APP_SECRET
+ * Run: npm run feishu
+ * Requires: FEISHU_APP_ID, FEISHU_APP_SECRET
  *
- * 飞书开放平台配置：事件订阅 → 使用长连接接收事件
+ * Feishu console: Event subscription → receive events via long connection.
  */
 import "dotenv/config";
 
@@ -21,23 +21,23 @@ import { paths } from "../config/config.js";
 import { FeishuSessionManager } from "./feishu-session-manager.js";
 import { EventManager } from "../core/events/event-manager.js";
 
-// ─── 环境变量 ────────────────────────────────────────────
+// ─── Environment ─────────────────────────────────────────
 
 const APP_ID = process.env.FEISHU_APP_ID!;
 const APP_SECRET = process.env.FEISHU_APP_SECRET!;
 
 if (!APP_ID || !APP_SECRET) {
-  console.error("❌ 缺少 FEISHU_APP_ID 或 FEISHU_APP_SECRET");
+  console.error("❌ Missing FEISHU_APP_ID or FEISHU_APP_SECRET");
   process.exit(1);
 }
 
-// 调试：检查 API key 配置
-console.log("🔑 环境变量检查:");
-console.log("  DEEPSEEK_API_KEY:", process.env.DEEPSEEK_API_KEY ? "已配置" : "❌ 未配置");
-console.log("  OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "已配置" : "❌ 未配置");
-console.log("  LLM_PROVIDER:", process.env.LLM_PROVIDER || "未设置");
+// Debug: LLM API key presence
+console.log("🔑 Environment check:");
+console.log("  DEEPSEEK_API_KEY:", process.env.DEEPSEEK_API_KEY ? "set" : "❌ missing");
+console.log("  OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "set" : "❌ missing");
+console.log("  LLM_PROVIDER:", process.env.LLM_PROVIDER || "(not set)");
 
-// ─── 一次性初始化 ────────────────────────────────────────
+// ─── One-time bootstrap ──────────────────────────────────
 
 initSession();
 console.log(`📋 Feishu Session: ${getSessionKey()}`);
@@ -52,26 +52,26 @@ const { skills, pluginRegistry } = await bootstrapPiagentApp({
   pluginsLogLabel: "🔌 Plugins",
 });
 
-// 飞书专用工具集（排除依赖模块级单例的有状态工具）
+// Feishu tool set (exclude tools that rely on module-level singleton state)
 const EXCLUDED_TOOLS = new Set(["compact", "browser", "task_create", "task_update", "task_list", "task_get", "spawn"]);
 const feishuTools: ToolDefinition[] = [
   ...allCustomTools.filter((t) => !EXCLUDED_TOOLS.has(t.name)),
   ...pluginRegistry.tools,
 ];
-console.log(`🔧 飞书工具集: ${feishuTools.map((t) => t.name).join(", ")}`);
+console.log(`🔧 Feishu tools: ${feishuTools.map((t) => t.name).join(", ")}`);
 
-// 创建 session 管理器（通用 ChannelSessionManager，channel="feishu"）
+// Session manager (ChannelSessionManager, channel="feishu")
 const sessionManager = new FeishuSessionManager({
   channel: "feishu",
   effectiveTools: feishuTools,
   skills,
 });
 
-// 7. 创建事件管理器（支持 cron 定时任务和 webhook）
+// Event manager (cron jobs and webhooks)
 const eventManager = new EventManager(sessionManager);
 
-// 示例：添加定时任务（每天 9 点发送投资建议）
-// eventManager.addCron("daily-report", "oc_xxx", "0 9 * * *", "生成今日投资建议并总结市场动态");
+// Example cron (daily 9:00 report):
+// eventManager.addCron("daily-report", "oc_xxx", "0 9 * * *", "Generate daily market summary");
 
 // 示例：webhook 触发（外部系统调用）
 // eventManager.triggerWebhook("oc_xxx", "github.pr.merged", { repo: "piagent", pr: 123 });

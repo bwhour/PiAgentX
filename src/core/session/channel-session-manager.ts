@@ -247,6 +247,7 @@ export class ChannelSessionManager {
     });
 
     const session = result.session;
+    // Shared extension bind + tool profile (same path as CLI / agent-loop)
     await finalizePiagentSession(session, {
       profile: "none",
       workspaceDir: paths.root,
