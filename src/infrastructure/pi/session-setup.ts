@@ -14,10 +14,169 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { join } from "path";
-import { createDeepSeekModel, paths } from "../../config/config.js";
+import { bootstrapData, createDeepSeekModel, paths } from "../../config/config.js";
 import { buildAgentSystemPrompt, initSkillsBlock } from "../../core/agent/system-prompt.js";
-import type { PluginSkill } from "../plugins/types.js";
+import { loadPlugins } from "../plugins/loader.js";
+import type { PluginRegistry, PluginSkill } from "../plugins/types.js";
+import { allCustomTools, initBrowserTool, initCompactTool, initMemoryTools, initTaskTools } from "../tools/index.js";
+import { backgroundCustomTools } from "../tools/background-tools.js";
+import { getMemoryStore } from "../../services/intelligence/memory-store.js";
+import { logBootstrapFiles, logSystemPrompt } from "../logging/observable-logger.js";
 import { createDynamicPromptExtension, type PromptChannel } from "./dynamic-prompt-extension.js";
+
+/** Tool init profile after session is created. */
+export type SessionToolProfile = "full" | "background" | "none";
+
+export interface PiagentAppBootstrap {
+  skills: Skill[];
+  pluginRegistry: PluginRegistry;
+  getEffectiveTools: () => ToolDefinition[];
+}
+
+export interface BootstrapPiagentAppOptions {
+  backgroundMode?: boolean;
+  skillsCwd?: string;
+  /** Console label prefix, e.g. "Plugins" or "Plugins loaded". */
+  pluginsLogLabel?: string;
+}
+
+export interface FinalizePiagentSessionOptions {
+  profile: SessionToolProfile;
+  workspaceDir: string;
+  sessionDir?: string;
+  channel?: PromptChannel;
+  getEffectiveTools?: () => ToolDefinition[];
+  logStartup?: boolean;
+}
+
+const bootstrapCache = new Map<string, Promise<PiagentAppBootstrap>>();
+
+function bootstrapCacheKey(options: BootstrapPiagentAppOptions): string {
+  return `${options.backgroundMode ?? false}:${options.skillsCwd ?? paths.root}`;
+}
+
+function logPluginRegistry(registry: PluginRegistry, label = "Plugins"): void {
+  if (registry.records.length === 0) return;
+  console.log(label.endsWith(":") ? label : `${label}:`);
+  for (const r of registry.records) {
+    if (r.status === "loaded") {
+      console.log(`  ✅ ${r.name}: ${r.toolCount} tools, ${r.skillCount} skills`);
+    } else {
+      console.warn(`  ❌ ${r.name}: ${r.error}`);
+    }
+  }
+}
+
+/**
+ * One-time app bootstrap: memory, skills, plugins. Cached per backgroundMode + skillsCwd.
+ */
+export async function bootstrapPiagentApp(
+  options: BootstrapPiagentAppOptions = {},
+): Promise<PiagentAppBootstrap> {
+  const key = bootstrapCacheKey(options);
+  let pending = bootstrapCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const skillsCwd = options.skillsCwd ?? paths.root;
+      initMemoryTools(paths.piDir);
+      const skills = loadProjectSkills(skillsCwd);
+      const pluginRegistry = await loadPlugins(paths.pluginDirs);
+      logPluginRegistry(pluginRegistry, options.pluginsLogLabel ?? "Plugins");
+      registerPluginSkills(skills, pluginRegistry.skills);
+      const pluginTools = pluginRegistry.tools;
+      const getEffectiveTools = (): ToolDefinition[] => {
+        const base = options.backgroundMode ? backgroundCustomTools : allCustomTools;
+        return [...base, ...pluginTools];
+      };
+      return { skills, pluginRegistry, getEffectiveTools };
+    })();
+    bootstrapCache.set(key, pending);
+  }
+  return pending;
+}
+
+/** Reset bootstrap cache (tests). */
+export function resetPiagentAppBootstrap(): void {
+  bootstrapCache.clear();
+}
+
+export async function logSessionStartup(options: {
+  workspaceDir: string;
+  getEffectiveTools: () => ToolDefinition[];
+  channel?: PromptChannel;
+}): Promise<void> {
+  logBootstrapFiles(bootstrapData);
+  logSystemPrompt(
+    buildAgentSystemPrompt({
+      memoryContext: "",
+      dailyMemory: "",
+      tools: options.getEffectiveTools(),
+      workspaceDir: options.workspaceDir,
+      channel: options.channel,
+    }),
+    0,
+  );
+  try {
+    const stats = getMemoryStore().getStats();
+    console.log(
+      `🧠 Memory: evergreen ${stats.evergreenChars} chars, ${stats.dailyFiles} daily file(s) (${stats.dailyEntries} entries)`,
+    );
+  } catch {
+    /* optional */
+  }
+}
+
+export async function finalizePiagentSession(
+  session: AgentSession,
+  options: FinalizePiagentSessionOptions,
+): Promise<void> {
+  await session.bindExtensions({});
+
+  const sessionDir = options.sessionDir;
+  if (options.profile === "full") {
+    initCompactTool(session);
+    if (sessionDir) {
+      initTaskTools(join(sessionDir, "tasks"));
+      initBrowserTool(sessionDir);
+    }
+  } else if (options.profile === "background" && sessionDir) {
+    initTaskTools(join(sessionDir, "tasks"));
+  }
+
+  if (options.logStartup && options.getEffectiveTools) {
+    await logSessionStartup({
+      workspaceDir: options.workspaceDir,
+      getEffectiveTools: options.getEffectiveTools,
+      channel: options.channel,
+    });
+  }
+}
+
+/** Shared resource-loader options for createPiagentSession and createAgentSessionServices. */
+export function buildPiagentResourceLoaderOptions(
+  options: Pick<PiagentSessionOptions, "cwd" | "channel" | "agentDir" | "extensionFactories">,
+  getTools: () => ToolDefinition[],
+) {
+  return {
+    extensionFactories: [
+      createDynamicPromptExtension({
+        workspaceDir: options.cwd,
+        getTools,
+        channel: options.channel,
+      }),
+      ...(options.extensionFactories ?? []),
+    ],
+    systemPromptOverride: () =>
+      buildAgentSystemPrompt({
+        memoryContext: "",
+        dailyMemory: "",
+        tools: getTools(),
+        workspaceDir: options.cwd,
+        channel: options.channel,
+      }),
+    appendSystemPromptOverride: () => [],
+  };
+}
 
 export interface PiagentSessionOptions {
   cwd: string;
@@ -73,23 +232,7 @@ async function buildResourceLoader(
   const loader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir,
-    extensionFactories: [
-      createDynamicPromptExtension({
-        workspaceDir: options.cwd,
-        getTools,
-        channel: options.channel,
-      }),
-      ...(options.extensionFactories ?? []),
-    ],
-    systemPromptOverride: () =>
-      buildAgentSystemPrompt({
-        memoryContext: "",
-        dailyMemory: "",
-        tools: getTools(),
-        workspaceDir: options.cwd,
-        channel: options.channel,
-      }),
-    appendSystemPromptOverride: () => [],
+    ...buildPiagentResourceLoaderOptions(options, getTools),
   });
   await loader.reload();
   return loader;

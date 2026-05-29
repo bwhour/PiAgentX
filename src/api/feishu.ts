@@ -12,14 +12,12 @@ import "dotenv/config";
 
 import * as lark from "@larksuiteoapi/node-sdk";
 import type { Skill } from "@earendil-works/pi-coding-agent";
-import { loadProjectSkills } from "../infrastructure/pi/session-setup.js";
+import { bootstrapPiagentApp } from "../infrastructure/pi/session-setup.js";
 import { initSession, getSessionKey, logEvent, logSessionEnd } from "../infrastructure/logging/observable-logger.js";
 import { appendJsonLog, getLogFilePath } from "../infrastructure/logging/file-log.js";
-import { allCustomTools, initMemoryTools } from "../infrastructure/tools/index.js";
+import { allCustomTools } from "../infrastructure/tools/index.js";
 import type { ToolDefinition } from "../infrastructure/tools/index.js";
-import { loadPlugins } from "../infrastructure/plugins/index.js";
 import { paths } from "../config/config.js";
-import { initSkillsBlock } from "../core/agent/system-prompt.js";
 import { FeishuSessionManager } from "./feishu-session-manager.js";
 import { EventManager } from "../core/events/event-manager.js";
 
@@ -50,36 +48,19 @@ appendJsonLog("feishu", {
   mode: "websocket-multi-session",
 });
 
-// 1. 全局记忆
-initMemoryTools(paths.piDir);
+const { skills, pluginRegistry } = await bootstrapPiagentApp({
+  pluginsLogLabel: "🔌 Plugins",
+});
 
-// 2. Skills
-const skills: Skill[] = loadProjectSkills(paths.root);
-
-// 3. 插件
-const pluginRegistry = await loadPlugins(paths.pluginDirs);
-if (pluginRegistry.records.length > 0) {
-  for (const r of pluginRegistry.records) {
-    if (r.status === "loaded") {
-      console.log(`  🔌 ${r.name}: ${r.toolCount} 工具, ${r.skillCount} 技能`);
-    } else {
-      console.warn(`  ❌ ${r.name}: ${r.error}`);
-    }
-  }
-}
-
-// 4. 初始化 skills block（缓存到 system-prompt 模块）
-initSkillsBlock(skills, pluginRegistry.skills);
-
-// 5. 构建飞书专用工具集（排除依赖模块级单例的有状态工具）
+// 飞书专用工具集（排除依赖模块级单例的有状态工具）
 const EXCLUDED_TOOLS = new Set(["compact", "browser", "task_create", "task_update", "task_list", "task_get", "spawn"]);
 const feishuTools: ToolDefinition[] = [
-  ...allCustomTools.filter(t => !EXCLUDED_TOOLS.has(t.name)),
+  ...allCustomTools.filter((t) => !EXCLUDED_TOOLS.has(t.name)),
   ...pluginRegistry.tools,
 ];
-console.log(`🔧 飞书工具集: ${feishuTools.map(t => t.name).join(", ")}`);
+console.log(`🔧 飞书工具集: ${feishuTools.map((t) => t.name).join(", ")}`);
 
-// 6. 创建 session 管理器（通用 ChannelSessionManager，channel="feishu"）
+// 创建 session 管理器（通用 ChannelSessionManager，channel="feishu"）
 const sessionManager = new FeishuSessionManager({
   channel: "feishu",
   effectiveTools: feishuTools,
