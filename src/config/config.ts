@@ -78,7 +78,7 @@ export const compactionConfig = {
 /**
  * Agent 配置
  *
- * systemPrompt 由 dynamic-prompt-extension（before_agent_start）每轮动态构建。
+ * systemPrompt 现在是动态构建的，每轮由 agent-loop 调用 buildSystemPrompt()。
  * 工具指令从 .pi/bootstrap/TOOLS.md 加载。
  */
 export const agentConfig = {};

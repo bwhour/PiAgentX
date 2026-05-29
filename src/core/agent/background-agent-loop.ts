@@ -4,16 +4,17 @@
 import { type AgentSession } from "@earendil-works/pi-coding-agent";
 import type { Message } from "../../types/index.js";
 import { backgroundManager } from "../../infrastructure/tools/background-spawn.js";
+import { initTaskTools } from "../../infrastructure/tools/task-tools.js";
 import { microCompact } from "../../services/compaction/compaction-service.js";
 import { join } from "path";
 import { SessionIdMapper } from "../session/session-id-mapper.js";
 import { paths } from "../../config/config.js";
 import {
-  bootstrapPiagentApp,
   createDefaultSessionManager,
   createPiagentSession,
-  finalizePiagentSession,
+  loadProjectSkills,
 } from "../../infrastructure/pi/session-setup.js";
+import { backgroundCustomTools } from "../../infrastructure/tools/background-tools.js";
 
 let session: AgentSession | null = null;
 
@@ -31,12 +32,11 @@ function getNotificationsText(): string {
 
 export async function getSession(): Promise<AgentSession> {
   if (!session) {
-    const { getEffectiveTools } = await bootstrapPiagentApp({ backgroundMode: true });
-
+    loadProjectSkills(paths.root);
     const result = await createPiagentSession({
       cwd: paths.root,
       sessionManager: createDefaultSessionManager(paths.root),
-      customTools: getEffectiveTools(),
+      customTools: backgroundCustomTools,
       channel: "terminal",
     });
     session = result.session;
@@ -45,11 +45,7 @@ export async function getSession(): Promise<AgentSession> {
     const mapper = new SessionIdMapper(paths.sessionMapFile);
     console.log(`📋 Session: ${mapper.getFriendlyId(sessionUuid)} (${sessionUuid})`);
 
-    await finalizePiagentSession(session, {
-      profile: "background",
-      workspaceDir: paths.root,
-      sessionDir: join(paths.sessionsDir, sessionUuid),
-    });
+    initTaskTools(join(paths.sessionsDir, sessionUuid, "tasks"));
   }
   return session;
 }

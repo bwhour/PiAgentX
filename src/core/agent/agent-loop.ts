@@ -6,52 +6,101 @@ import {
   estimateTokens,
 } from "@earendil-works/pi-coding-agent";
 import type { Message } from "../../types/index.js";
+import {
+  allCustomTools,
+  initCompactTool,
+  initBrowserTool,
+  initTaskTools,
+  initMemoryTools,
+} from "../../infrastructure/tools/index.js";
+import type { ToolDefinition } from "../../infrastructure/tools/index.js";
+import { loadPlugins } from "../../infrastructure/plugins/index.js";
 import { microCompact } from "../../services/compaction/compaction-service.js";
 import { join } from "path";
+import { paths } from "../../config/config.js";
 import {
   getSessionDir,
   getSessionKey,
+  logSystemPrompt,
+  logBootstrapFiles,
 } from "../../infrastructure/logging/observable-logger.js";
-import { autoRecall } from "./system-prompt.js";
+import { autoRecall, buildAgentSystemPrompt } from "./system-prompt.js";
+import { bootstrapData } from "../../config/config.js";
 import {
-  bootstrapPiagentApp,
   createDefaultSessionManager,
   createPiagentSession,
-  finalizePiagentSession,
+  loadProjectSkills,
+  registerPluginSkills,
 } from "../../infrastructure/pi/session-setup.js";
 
 let session: AgentSession | null = null;
+let pluginTools: ToolDefinition[] = [];
 
 function getWorkspaceDir(): string {
   return join(getSessionDir(), "workspace");
 }
 
+function getEffectiveTools(): ToolDefinition[] {
+  return [...allCustomTools, ...pluginTools];
+}
+
 export async function getSession(): Promise<AgentSession> {
   if (!session) {
     try {
-      const { getEffectiveTools } = await bootstrapPiagentApp({
-        pluginsLogLabel: "🔌 Plugins loaded",
-      });
+      initMemoryTools(paths.piDir);
+
+      const skills = loadProjectSkills(paths.root);
+      const pluginRegistry = await loadPlugins(paths.pluginDirs);
+      pluginTools = pluginRegistry.tools;
+
+      if (pluginRegistry.records.length > 0) {
+        console.log("🔌 Plugins loaded:");
+        for (const r of pluginRegistry.records) {
+          if (r.status === "loaded") {
+            console.log(`  ✅ ${r.name}: ${r.toolCount} tools, ${r.skillCount} skills`);
+          } else {
+            console.warn(`  ❌ ${r.name}: ${r.error}`);
+          }
+        }
+      }
+
+      registerPluginSkills(skills, pluginRegistry.skills);
 
       const workspaceDir = getWorkspaceDir();
+      const effectiveTools = getEffectiveTools();
       const result = await createPiagentSession({
         cwd: workspaceDir,
         sessionManager: createDefaultSessionManager(workspaceDir),
-        customTools: getEffectiveTools(),
+        customTools: effectiveTools,
         channel: "terminal",
       });
       session = result.session;
-
-      await finalizePiagentSession(session, {
-        profile: "full",
-        workspaceDir,
-        sessionDir: getSessionDir(),
-        getEffectiveTools,
-        logStartup: true,
-        channel: "terminal",
-      });
+      initCompactTool(session);
 
       console.log(`📋 Session: ${getSessionKey()}`);
+      logBootstrapFiles(bootstrapData);
+      logSystemPrompt(
+        buildAgentSystemPrompt({
+          memoryContext: "",
+          dailyMemory: "",
+          tools: effectiveTools,
+          workspaceDir,
+        }),
+        0,
+      );
+
+      initTaskTools(join(getSessionDir(), "tasks"));
+      initBrowserTool(getSessionDir());
+
+      try {
+        const { getMemoryStore } = await import("../../services/intelligence/memory-store.js");
+        const stats = getMemoryStore().getStats();
+        console.log(
+          `🧠 Memory: evergreen ${stats.evergreenChars} chars, ${stats.dailyFiles} daily files (${stats.dailyEntries} entries)`,
+        );
+      } catch {
+        /* optional */
+      }
     } catch (error) {
       console.error(
         "❌ Failed to create AgentSession:",
