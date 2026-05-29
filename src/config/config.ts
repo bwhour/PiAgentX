@@ -1,11 +1,11 @@
 /**
- * 统一配置管理
+ * Central configuration.
  */
 import type { Model } from "@earendil-works/pi-ai";
 import { join } from "path";
 import { BootstrapLoader } from "../services/intelligence/bootstrap-loader.js";
 
-// 启动时加载一次 bootstrap（skills/memory 在 agent-loop 里每轮更新）
+// Load bootstrap once at startup (skills/memory refresh each turn in agent-loop)
 const _bootstrapLoader = new BootstrapLoader(join(process.cwd(), ".pi"));
 export const bootstrapData = _bootstrapLoader.loadAll("full");
 
@@ -69,16 +69,16 @@ export const paths = {
  * 压缩配置
  */
 export const compactionConfig = {
-  // 保留最近 N 个工具调用结果
+  // Keep the N most recent tool call results
   keepRecentToolResults: 3,
-  // 工具结果超过此长度才压缩
+  // Compact tool results only when longer than this
   minLengthToCompact: 100,
 };
 
 /**
- * Agent 配置
+ * Agent configuration placeholder.
  *
- * systemPrompt 由 dynamic-prompt-extension（before_agent_start）每轮动态构建。
- * 工具指令从 .pi/bootstrap/TOOLS.md 加载。
+ * systemPrompt is built each turn by dynamic-prompt-extension (before_agent_start).
+ * Tool instructions come from .pi/bootstrap/TOOLS.md.
  */
 export const agentConfig = {};
