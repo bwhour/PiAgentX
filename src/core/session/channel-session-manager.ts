@@ -22,7 +22,7 @@ import type { ToolDefinition } from "../../infrastructure/tools/index.js";
 import { autoRecall } from "../agent/system-prompt.js";
 import { microCompact } from "../../services/compaction/compaction-service.js";
 import { paths } from "../../config/config.js";
-import { createPiagentSession } from "../../infrastructure/pi/session-setup.js";
+import { createPiagentSession, finalizePiagentSession } from "../../infrastructure/pi/session-setup.js";
 import { join } from "path";
 import { mkdirSync, appendFileSync, readFileSync, existsSync, readdirSync } from "fs";
 import { appendJsonLog } from "../../infrastructure/logging/file-log.js";
@@ -247,7 +247,10 @@ export class ChannelSessionManager {
     });
 
     const session = result.session;
-    await session.bindExtensions({});
+    await finalizePiagentSession(session, {
+      profile: "none",
+      workspaceDir: paths.root,
+    });
 
     this.sessions.set(chatId, {
       session,
