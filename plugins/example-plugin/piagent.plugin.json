@@ -1,0 +1,6 @@
+{
+  "id": "example-plugin",
+  "name": "Example Plugin",
+  "description": "演示如何编写 piagent 插件",
+  "version": "1.0.0"
+}

@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+*.log
+events.jsonl
+.DS_Store
+.kiro
+.pi

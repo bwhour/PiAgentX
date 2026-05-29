@@ -1,0 +1,40 @@
+{
+  "name": "piagent",
+  "version": "0.2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "feishu": "tsx src/api/feishu.ts",
+    "acp:openclaw": "tsx src/acp/openclaw-test.ts",
+    "acp:multi": "tsx src/acp/multi-turn-test.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.75.4",
+    "@earendil-works/pi-ai": "0.75.4",
+    "@earendil-works/pi-coding-agent": "0.75.4",
+    "@earendil-works/pi-tui": "0.75.4",
+    "@larksuiteoapi/node-sdk": "^1.56.1",
+    "@sinclair/typebox": "^0.34.0",
+    "dotenv": "^17.3.1",
+    "node-cron": "^4.2.1",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0"
+  }
+}
